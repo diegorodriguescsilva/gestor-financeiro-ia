@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Leitor de Comprovantes Pro</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F9FAFB; --surface: #FFFFFF; --border: #E5E7EB;
+    --border2: #D1D5DB; --text: #111827; --muted: #6B7280;
+    --hint: #9CA3AF; --blue: #1A56DB; --blue-light: #EFF6FF;
+    --green: #057A55; --green-light: #D1FAE5;
+    --amber: #92400E; --amber-light: #FEF3C7;
+    --purple: #5521B5; --purple-light: #EDE9FE;
+    --red: #9B1C1C; --danger-bg: #FEF2F2;
+    --radius: 10px; --radius-sm: 6px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border);
+           padding: 0 2rem; height: 60px; display: flex; align-items: center;
+           gap: 12px; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header p { font-size: 13px; color: var(--muted); margin-left: auto; }
+
+  .layout { display: grid; grid-template-columns: 380px 1fr; gap: 0; height: calc(100vh - 60px); }
+
+  .left-panel { border-right: 1px solid var(--border); padding: 1.5rem;
+                overflow-y: auto; background: var(--surface); display: flex; flex-direction: column; gap: 1.5rem; }
+
+  .drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius);
+               padding: 2.5rem 1rem; text-align: center; cursor: pointer;
+               transition: all 0.15s; background: var(--bg); }
+  .drop-zone:hover { border-color: var(--blue); background: var(--blue-light); }
+  .drop-zone h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .drop-zone p { font-size: 12px; color: var(--muted); }
+
+  /* Barra de Progresso */
+  .progress-container { display: none; margin-top: 10px; }
+  .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 5px; }
+  .progress-fill { height: 100%; width: 0%; background: var(--blue); transition: width 0.3s; }
+  .progress-text { font-size: 11px; font-weight: 600; color: var(--blue); text-transform: uppercase; }
+
+  .btn { width: 100%; padding: 12px 16px; border: none; border-radius: var(--radius-sm);
+         font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-align: center; text-decoration: none; }
+  .btn-primary { background: var(--blue); color: white; }
+  .btn-primary:hover { background: #1447C7; }
+  .btn-primary:disabled { background: var(--border2); color: var(--hint); cursor: not-allowed; }
+  
+  .btn-export { background: #065F46; color: white; margin-top: 8px; display: none; }
+  .btn-export:hover { background: #047857; }
+
+  .btn-secondary { background: transparent; color: var(--muted); border: 1px solid var(--border2); margin-top: 8px; }
+
+  .result-panel { padding: 2rem; overflow-y: auto; background: var(--bg); }
+  .empty-result { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--hint); }
+
+  /* Estilo dos itens processados */
+  .result-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .card-val { font-size: 24px; font-weight: 700; color: var(--text); }
+  .badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge-pix { background: var(--green-light); color: var(--green); }
+  
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .card-field label { display: block; font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+  .card-field span { font-size: 13px; font-weight: 500; }
+
+  @media (max-width: 768px) {
+    .layout { grid-template-columns: 1fr; }
+    .left-panel { border-right: none; height: auto; }
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <div style="background: var(--blue); width:30px; height:30px; border-radius:6px;"></div>
+  <h1>Leitor de Comprovantes</h1>
+  <p id="headerCount">Carregando histórico...</p>
+</header>
+
+<div class="layout">
+  <div class="left-panel">
+    <div class="drop-zone" id="dropZone">
+      <h3>Selecionar Comprovantes</h3>
+      <p>Você pode selecionar vários arquivos</p>
+    </div>
+
+    <input type="file" id="fileInput" name="imagens" multiple style="display:none" accept="image/*,application/pdf"/>
+
+    <div class="actions">
+      <button id="btnAnalyze" class="btn btn-primary" disabled>Analisar Arquivos</button>
+      
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-text" id="progressText">Processando...</div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <a href="/api/exportar" id="btnExport" class="btn btn-export">Baixar Planilha (CSV)</a>
+      <button id="btnClear" class="btn btn-secondary" style="display:none">Limpar Lista</button>
+    </div>
+
+    <div id="statusMsg" style="font-size: 12px; color: var(--muted); text-align: center;"></div>
+  </div>
+
+  <div class="result-panel">
+    <div id="emptyResult" class="empty-result">
+      <p>Os resultados aparecerão aqui conforme forem processados.</p>
+    </div>
+    <div id="resultContent"></div>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const btnAnalyze = document.getElementById('btnAnalyze');
+const btnClear = document.getElementById('btnClear');
+const btnExport = document.getElementById('btnExport');
+const resultContent = document.getElementById('resultContent');
+const emptyResult = document.getElementById('emptyResult');
+const progressContainer = document.getElementById('progressContainer');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const headerCount = document.getElementById('headerCount');
+
+let selectedFiles = [];
+
+// Abrir seletor de arquivos
+dropZone.onclick = () => fileInput.click();
+
+// Quando arquivos são selecionados
+fileInput.onchange = e => {
+    selectedFiles = Array.from(e.target.files);
+    if (selectedFiles.length > 0) {
+        dropZone.innerHTML = `<h3>${selectedFiles.length} arquivos prontos</h3><p>Clique para alterar a seleção</p>`;
+        dropZone.style.borderColor = "var(--blue)";
+        btnAnalyze.disabled = false;
+        btnClear.style.display = 'block';
+        btnExport.style.display = 'none'; // Esconde exportar até terminar novo lote
+    }
+};
+
+// Limpar seleção
+btnClear.onclick = () => {
+    selectedFiles = [];
+    fileInput.value = '';
+    dropZone.innerHTML = `<h3>Selecionar Comprovantes</h3><p>Você pode selecionar vários arquivos</p>`;
+    dropZone.style.borderColor = "var(--border2)";
+    btnAnalyze.disabled = true;
+    btnClear.style.display = 'none';
+    progressContainer.style.display = 'none';
+};
+
+// Lógica de Análise Sequencial (para evitar erro 429)
+btnAnalyze.onclick = async () => {
+    if (selectedFiles.length === 0) return;
+
+    btnAnalyze.disabled = true;
+    btnClear.style.display = 'none';
+    progressContainer.style.display = 'block';
+    emptyResult.style.display = 'none';
+
+    const total = selectedFiles.length;
+    
+    for (let i = 0; i < total; i++) {
+        const file = selectedFiles[i];
+        
+        // Atualiza Barra
+        const percent = ((i + 1) / total) * 100;
+        progressFill.style.width = percent + '%';
+        progressText.innerText = `Lendo ${i + 1} de ${total}...`;
+
+        const fd = new FormData();
+        fd.append('imagens', file);
+
+        try {
+            const res = await fetch('/api/analisar', { method: 'POST', body: fd });
+            const data = await res.json();
+            
+            // Renderiza cada item retornado
+            if (Array.isArray(data)) {
+                data.forEach(item => renderCard(item));
+            }
+        } catch (err) {
+            console.error("Erro no arquivo:", file.name, err);
+        }
+    }
+
+    progressText.innerText = "Processamento concluído!";
+    btnExport.style.display = 'block';
+    loadHistoryCount();
+};
+
+function renderCard(d) {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    
+    card.innerHTML = `
+        <div class="card-header">
+            <div class="card-val">${d.valor || 'R$ 0,00'}</div>
+            <div class="badge badge-pix">${d.tipo || 'Comprovante'}</div>
+        </div>
+        <div class="card-grid">
+            <div class="card-field">
+                <label>Destinatário</label>
+                <span>${d.destinatario_nome || '—'}</span>
+            </div>
+            <div class="card-field">
+                <label>Instituição</label>
+                <span>${d.destinatario_banco || '—'}</span>
+            </div>
+            <div class="card-field">
+                <label>Data de Pagamento</label>
+                <span>${d.data_pagamento || '—'}</span>
+            </div>
+            <div class="card-field">
+                <label>Pagador</label>
+                <span>${d.remetente_nome || '—'}</span>
+            </div>
+        </div>
+    `;
+    resultContent.prepend(card); // Adiciona o novo no topo
+}
+
+async function loadHistoryCount() {
+    try {
+        const res = await fetch('/api/comprovantes');
+        const data = await res.json();
+        headerCount.innerText = `${data.length} registros no sistema`;
+    } catch (e) {
+        headerCount.innerText = "Erro ao carregar histórico";
+    }
+}
+
+// Iniciar contador
+loadHistoryCount();
+</script>
+
+</body>
+</html>
